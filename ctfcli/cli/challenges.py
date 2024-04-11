@@ -971,6 +971,62 @@ class ChallengeCommand:
             click.echo(f" - {challenge_instance}")
 
         return 1
+    
+    def test(
+        self,
+        challenge: str = None,
+        # Skips challenges that use docker
+        skip_docker: bool = False,
+        # How long to run each test before automatically failing
+        timeout: float = 30,
+        # How long to wait for docker to launch
+        docker_wait: float = 30
+    ) -> int:
+        returncode = 0
+
+        log.debug(f"test: (challenge={challenge}, skip_docker={skip_docker}, timeout='{timeout}', docker_wait='{docker_wait}')")
+
+        if challenge:
+            challenge_instance: Challenge = self._resolve_single_challenge(challenge)
+            click.secho(f"Loaded {challenge_instance}", fg="blue")
+            if not challenge_instance:
+                return 1
+
+            challenges: List[Challenge] = [challenge_instance]
+        else:
+            challenges: List[Challenge] = self._resolve_all_challenges()
+            click.secho(f"Loaded challenges", fg="blue")
+        
+        for challenge_instance in challenges:
+            challenge_name = challenge_instance.get("name")
+            if not challenge_name:
+                click.secho("A challenge did not provide a name, it will be skipped", color="red")
+                continue
+
+            if (challenge_instance.image or challenge_instance.test_image) and skip_docker:
+                click.secho(f"Skipped {challenge_name}; used Docker", color="yellow")
+                continue
+            # The docker wait <= 0 condition prevents error messages for low timeouts
+            success, passes, fails = challenge_instance.test(timeout, docker_wait, docker_wait <= 0)
+            if success:
+                if fails == 0:
+                    click.secho(f"Success! {passes} passed, none failed.", color="green")
+                else:
+                    click.secho(f"Success! {passes} passed, {fails} failed.", color="yellow")
+                    returncode = 1
+            else:
+                click.secho(f"Errors occurred, results may be inconclusive: {passes} passed, {fails} failed.", color="red")
+                returncode = 1
+        
+        #try:
+        #    challenge_instance.lint(skip_hadolint=skip_hadolint, flag_format=flag_format)
+        #except LintException as e:
+        #    click.secho("Linting found issues!\n", fg="yellow")
+        #    e.print_summary()
+        #    return 1
+
+        click.secho("Testing done!", fg="green")
+        return returncode
 
     @staticmethod
     def _resolve_single_challenge(challenge: Optional[str] = None) -> Optional[Challenge]:

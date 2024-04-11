@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 from os import PathLike
@@ -10,12 +11,15 @@ from slugify import slugify
 
 from ctfcli.core.api import API
 from ctfcli.core.exceptions import (
+    DockerError,
     InvalidChallengeDefinition,
     InvalidChallengeFile,
     LintException,
     RemoteChallengeNotFound,
 )
+from ctfcli.core.flag import Flag, FlagType
 from ctfcli.core.image import Image
+from ctfcli.core.test import Test, TestType
 from ctfcli.utils.hashing import hash_file
 from ctfcli.utils.tools import strings
 
@@ -142,6 +146,78 @@ class Challenge(dict):
 
         # Assign an image if the challenge provides one, otherwise this will be set to None
         self.image = self._process_challenge_image(self.get("image"))
+        self.test_image = self._process_challenge_image(self.get("test_image"))
+
+        challenge_files = self.get("files", [])
+
+        raw_tests = self.get("tests", [])
+        raw_flags = self.get("flags", [])
+
+        self.tests: List[Test] = []
+        for raw_test in raw_tests:
+            if isinstance(raw_test, str):
+                self.tests.append(Test(raw_test, TestType.SOLUTION, challenge_files))
+            elif isinstance(raw_test, dict):
+                if "script" not in raw_test:
+                    click.secho(
+                        f"All tests must contain 'script' key: {flag}",
+                        fg="red",
+                    )
+                test_files: List[str] = raw_test.get("files", [])
+                if isinstance(test_files, str):
+                    test_files = [test_files]
+                test_type: str = raw_test.get("type", "solution")
+                if test_type == "solution":
+                    self.tests.append(Test(raw_test["script"], TestType.SOLUTION, test_files + challenge_files))
+                elif test_type == "status":
+                    self.tests.append(Test(raw_test["script"], TestType.STATUS, test_files + challenge_files))
+                else:
+                    click.secho(
+                        f"{raw_test['script']} will be ignored. Test type must be either 'status' or 'solution'.",
+                        fg="red",
+                    )
+            else:
+                click.secho(
+                    f"Each test must be either a string or a set of key-value pairs: {flag}",
+                    fg="red",
+                )
+        
+        self.flags: List[Flag] = []
+        for flag in raw_flags:
+            if isinstance(flag, str):
+                self.flags.append(Flag(flag))
+            elif isinstance(flag, dict):
+                leaving: bool = False
+                if "type" not in flag:
+                    leaving = True
+                    click.secho(
+                        f"Flag does not contain 'type' field, it will be ignored: {flag}.",
+                        fg="red",
+                    )
+                if "content" not in flag:
+                    leaving = True
+                    click.secho(
+                        f"Flag does not contain 'content' field, it will be ignored: {flag}.",
+                        fg="red",
+                    )
+                if leaving: continue
+
+                case_matters: bool = True
+                if flag.get("data", "case_sensitive") == "case_insensitive":
+                    case_matters = False
+
+                if flag["type"] == "static":
+                    self.lags.append(Flag(flag["content"], FlagType.STATIC, case_matters))
+
+                # Very untested
+                elif flag["type"] == "regex":
+                    self.flags.append(Flag(flag["content"], FlagType.REGEX, case_matters))
+
+            else:
+                click.secho(
+                    f"Each flag must be either a string or a set of key-value pairs: {flag}",
+                    fg="red",
+                )
 
     def __str__(self):
         return self["name"]
@@ -886,3 +962,107 @@ class Challenge(dict):
 
         except Exception as e:
             raise InvalidChallengeFile(f"Challenge file could not be saved:\n{e}")
+
+    def test(self, test_timeout: float = 30, docker_port_timeout: float = 30, skip_wait_for_ports: bool = False) -> Tuple[bool, int, int]:
+        test_environment: Dict[str, str] = os.environ.copy()
+
+        test_image: Image = None
+        if self.test_image:
+            test_image = self.test_image
+        elif self.image:
+            test_image = self.image
+        
+        if test_image:
+            # We could put an environment here
+            test_image.run()
+            if not skip_wait_for_ports:
+                test_image.wait_for_exposed_ports(docker_port_timeout)
+            test_environment["HOST"] = test_image.ip
+
+        fail_count: int = 0
+        pass_count: int = 0
+        success: bool = True
+
+        try:
+            for test in self.tests:
+                if test_image and not test_image.running:
+                    raise DockerError("Container went down before test could begin.")
+                try:
+                    # Run the test
+                    result: subprocess.CompletedProcess = test.run(test_timeout, test_environment)
+                except subprocess.TimeoutExpired:
+                    click.secho(
+                        f"Failed due to timeout ({test_timeout} seconds). Hint: you can adjust this using --timeout",
+                        color="red"
+                    )
+                    fail_count += 1
+                    continue
+
+                container_fail: bool = test_image and not test_image.running
+
+                if test.type == TestType.SOLUTION:
+                    response: str = result.stdout.strip()
+                    for flag in self.flags:
+                        if flag.check(response):
+                            click.secho(
+                                f"Passed {test.script}!",
+                                color="green"
+                            )
+                            pass_count += 1
+                            break
+                    else:
+                        click.secho(
+                            f"{test.script} failed.\nOutput:\n{response}\n\nError:\n{result.stderr.strip()}",
+                            color="red"
+                        )
+                        fail_count += 1
+                elif test.type == TestType.STATUS:
+                    if result.returncode == 0:
+                        click.secho(
+                            f"Passed {test.script}!",
+                            color="green"
+                        )
+                        pass_count += 1
+                    else:
+                        click.secho(
+                            f"{test.script} failed. Return code: {result.returncode}\nOutput:\n{result.stdout.strip()}\n\nError:\n{result.stderr.strip()}",
+                            color="red"
+                        )
+                        fail_count += 1
+                
+                if container_fail:
+                    raise DockerError("Container went down during test.")
+            
+        except Exception as e:
+            click.secho(
+                f"Error running tests: {e}",
+                color="red"
+            )
+            success = False
+
+        finally:
+            if test_image:
+                try:
+                    if test_image.running:
+                        test_image.stop()
+                except subprocess.CalledProcessError as e:
+                    click.secho(
+                        f"Error stopping docker: {e}"
+                        "You will have to manually stop and potentially delete the container."
+                        f"Container ID: {test_image.container}",
+                        color="red"
+                    )
+                    success = False
+
+        if not success:
+            click.secho(
+                "Exitted with an error. Testing data will be inaccurate.",
+                color="red"
+            )
+        if fail_count > 0:
+            click.secho(
+                "Some tests failed.",
+                color="red"
+            )
+
+        return success, pass_count, fail_count
