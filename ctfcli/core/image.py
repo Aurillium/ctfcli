@@ -69,6 +69,8 @@ class Image:
     def run(self, environment: Dict[str, str]) -> Optional[str]:
         if not self.built:
             self.build()
+        if self.running:
+            return self.container
 
         command = ["docker", "run", "--rm", "-d"]
         for variable in environment:
