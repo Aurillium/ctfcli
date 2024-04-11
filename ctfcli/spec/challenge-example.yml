@@ -24,6 +24,12 @@ type: standard
 # If you have an imaged hosted on Docker set to the image url (e.g. python/3.8:latest, registry.gitlab.com/python/3.8:latest)
 # Follow Docker best practices and assign a tag
 image: null
+# `test_image` is similar to `image`, but instead is an image used only for testing
+# This is useful if a different image needs to be used for testing, or if a container
+# defined in another challenge will be used for this challenge
+# The value should be either a path to the folder with the Dockerfile, or an image URL
+# This can be left undefined if not needed
+test_image: null
 
 # Specify a protocol that should be used to connect to the running image
 # For example if the image is a website you can specify http or https
@@ -122,3 +128,32 @@ state: hidden
 # Specifies what version of the challenge specification was used.
 # Subject to change until ctfcli v1.0.0
 version: "0.1"
+
+# Adds tests to your challenge; these will be checked by `ctf challenges test`
+# Tests can be 'solution' tests or 'status' tests. Solution tests solve the
+# challenge and print only the flag to the console. ctfcli will make sure the
+# flag is valid, and if so the test will pass. 'status' tests check the exit
+# code of the test script. If it is 0, the test passes, otherwise it fails.
+# You can also allow the test to use additional files that aren't given to
+# contestants using 'files'. These will only be available in the testing
+# environment.
+tests:
+    - solution1.sh
+    - script: solution2.sh
+    - {
+        script: solution3.sh,
+        type: solution
+    }
+    - {
+        script: status.sh,
+        type: status,
+        files: [helper.sh, code.c]
+    }
+    - {
+        script: status2.sh,
+        type: status
+    }
+    - {
+        script: solution4.sh,
+        files: [helper.sh, code.c]
+    }
