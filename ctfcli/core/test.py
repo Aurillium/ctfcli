@@ -19,8 +19,7 @@ class TestType(Enum):
             return "status"
 
 class Test:
-    def __init__(self, script: PathLike, type: TestType, files: List[PathLike], timeout: float):
-        self.timeout = timeout
+    def __init__(self, script: PathLike, type: TestType, files: List[PathLike]):
         self.script = script
         self.type = type
         self.files: List[pathlib.Path] = []
@@ -32,7 +31,7 @@ class Test:
                 raise ValueError(f"'{file}' (required by '{script}') is not a file.")
             self.files.append(new_file)
 
-    def run(self, environment: Dict[str, str] = {}) -> subprocess.CompletedProcess:
+    def run(self, timeout: float, environment: Dict[str, str] = {}) -> subprocess.CompletedProcess:
         # Just in case the test doesn't complete
         result: subprocess.CompletedProcess = None
         # Set up for if we get an error
@@ -59,7 +58,7 @@ class Test:
             st = os.stat(script_path)
             os.chmod(script_path, st.st_mode | stat.S_IEXEC)
 
-            result = subprocess.run([script_path], capture_output=True, text=True, timeout=self.timeout, cwd=temp_dir, env=environment)
+            result = subprocess.run([script_path], capture_output=True, text=True, timeout=timeout, cwd=temp_dir, env=environment)
 
         except Exception as e:
             error = e
