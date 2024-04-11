@@ -55,3 +55,6 @@ class InvalidPageConfiguration(PageException):
 
 class IllegalPageOperation(PageException):
     pass
+
+class DockerError(Exception):
+    pass
