@@ -163,7 +163,7 @@ class Image:
             s.settimeout(1)
 
             while default_timer() - start_time < timeout:
-                if s.connect_ex((self.ip, port)):
+                if not s.connect_ex((self.ip, port)):
                     # Break out of the loop for this port,
                     # indicating success
                     break

@@ -981,8 +981,6 @@ class ChallengeCommand:
         timeout: float = 30,
         # How long to wait for docker to launch
         docker_wait: float = 30,
-        # Occasionally a container will need time even after its ports are up
-        wait_after_ports: float = 2,
         # Environment variables for the docker container (this is more likely to be used with plugins)
         docker_environment: Dict[str, str] = {}
     ) -> int:
@@ -1011,7 +1009,7 @@ class ChallengeCommand:
                 click.secho(f"Skipped {challenge_name}; used Docker", color="yellow")
                 continue
             # The docker wait <= 0 condition prevents error messages for low timeouts
-            success, passes, fails = challenge_instance.test(timeout, docker_wait, docker_wait <= 0, wait_after_ports, docker_environment)
+            success, passes, fails = challenge_instance.test(timeout, docker_wait, docker_wait <= 0, docker_environment)
             if success:
                 if fails == 0:
                     click.secho(f"Success! {passes} passed, none failed.", color="green")

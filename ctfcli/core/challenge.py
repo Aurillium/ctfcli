@@ -964,7 +964,7 @@ class Challenge(dict):
         except Exception as e:
             raise InvalidChallengeFile(f"Challenge file could not be saved:\n{e}")
 
-    def test(self, test_timeout: float = 30, docker_port_timeout: float = 30, skip_wait_for_ports: bool = False, wait_after_ports: float = 2, docker_environment: Dict[str, str] = {}) -> Tuple[bool, int, int]:
+    def test(self, test_timeout: float = 30, docker_port_timeout: float = 30, skip_wait_for_ports: bool = False, docker_environment: Dict[str, str] = {}) -> Tuple[bool, int, int]:
         test_environment: Dict[str, str] = os.environ.copy()
 
         test_image: Optional[Image] = None
@@ -977,8 +977,6 @@ class Challenge(dict):
             test_image.run(docker_environment)
             if not skip_wait_for_ports:
                 test_image.wait_for_exposed_ports(docker_port_timeout)
-                if wait_after_ports > 0:
-                    time.sleep(wait_after_ports)
             test_environment["HOST"] = test_image.ip
 
         fail_count: int = 0
