@@ -2,7 +2,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import click
@@ -980,7 +980,11 @@ class ChallengeCommand:
         # How long to run each test before automatically failing
         timeout: float = 30,
         # How long to wait for docker to launch
-        docker_wait: float = 30
+        docker_wait: float = 30,
+        # Occasionally a container will need time even after its ports are up
+        wait_after_ports: float = 2,
+        # Environment variables for the docker container (this is more likely to be used with plugins)
+        docker_environment: Dict[str, str] = {}
     ) -> int:
         returncode = 0
 
@@ -1007,7 +1011,7 @@ class ChallengeCommand:
                 click.secho(f"Skipped {challenge_name}; used Docker", color="yellow")
                 continue
             # The docker wait <= 0 condition prevents error messages for low timeouts
-            success, passes, fails = challenge_instance.test(timeout, docker_wait, docker_wait <= 0)
+            success, passes, fails = challenge_instance.test(timeout, docker_wait, docker_wait <= 0, wait_after_ports, docker_environment)
             if success:
                 if fails == 0:
                     click.secho(f"Success! {passes} passed, none failed.", color="green")
