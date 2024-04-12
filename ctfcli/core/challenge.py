@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import time
 from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -156,7 +157,7 @@ class Challenge(dict):
         self.tests: List[Test] = []
         for raw_test in raw_tests:
             if isinstance(raw_test, str):
-                self.tests.append(Test(raw_test, TestType.SOLUTION, challenge_files))
+                self.tests.append(Test(raw_test, TestType.SOLUTION, challenge_files, base_path=self.challenge_directory))
             elif isinstance(raw_test, dict):
                 if "script" not in raw_test:
                     click.secho(
@@ -168,9 +169,9 @@ class Challenge(dict):
                     test_files = [test_files]
                 test_type: str = raw_test.get("type", "solution")
                 if test_type == "solution":
-                    self.tests.append(Test(raw_test["script"], TestType.SOLUTION, test_files + challenge_files))
+                    self.tests.append(Test(raw_test["script"], TestType.SOLUTION, test_files + challenge_files, base_path=self.challenge_directory))
                 elif test_type == "status":
-                    self.tests.append(Test(raw_test["script"], TestType.STATUS, test_files + challenge_files))
+                    self.tests.append(Test(raw_test["script"], TestType.STATUS, test_files + challenge_files, base_path=self.challenge_directory))
                 else:
                     click.secho(
                         f"{raw_test['script']} will be ignored. Test type must be either 'status' or 'solution'.",
@@ -207,7 +208,7 @@ class Challenge(dict):
                     case_matters = False
 
                 if flag["type"] == "static":
-                    self.lags.append(Flag(flag["content"], FlagType.STATIC, case_matters))
+                    self.flags.append(Flag(flag["content"], FlagType.STATIC, case_matters))
 
                 # Very untested
                 elif flag["type"] == "regex":
@@ -963,20 +964,21 @@ class Challenge(dict):
         except Exception as e:
             raise InvalidChallengeFile(f"Challenge file could not be saved:\n{e}")
 
-    def test(self, test_timeout: float = 30, docker_port_timeout: float = 30, skip_wait_for_ports: bool = False) -> Tuple[bool, int, int]:
+    def test(self, test_timeout: float = 30, docker_port_timeout: float = 30, skip_wait_for_ports: bool = False, wait_after_ports: float = 2, docker_environment: Dict[str, str] = {}) -> Tuple[bool, int, int]:
         test_environment: Dict[str, str] = os.environ.copy()
 
-        test_image: Image = None
+        test_image: Optional[Image] = None
         if self.test_image:
             test_image = self.test_image
         elif self.image:
             test_image = self.image
         
         if test_image:
-            # We could put an environment here
-            test_image.run()
+            test_image.run(docker_environment)
             if not skip_wait_for_ports:
                 test_image.wait_for_exposed_ports(docker_port_timeout)
+                if wait_after_ports > 0:
+                    time.sleep(wait_after_ports)
             test_environment["HOST"] = test_image.ip
 
         fail_count: int = 0
@@ -1032,7 +1034,7 @@ class Challenge(dict):
                 
                 if container_fail:
                     raise DockerError("Container went down during test.")
-            
+
         except Exception as e:
             click.secho(
                 f"Error running tests: {e}",
@@ -1043,11 +1045,13 @@ class Challenge(dict):
         finally:
             if test_image:
                 try:
+                    click.secho(f"Bringing container down...", nl=False)
                     if test_image.running:
                         test_image.stop()
+                    click.secho(" Done!")
                 except subprocess.CalledProcessError as e:
                     click.secho(
-                        f"Error stopping docker: {e}"
+                        f"\nError stopping docker: {e}"
                         "You will have to manually stop and potentially delete the container."
                         f"Container ID: {test_image.container}",
                         color="red"

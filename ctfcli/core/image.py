@@ -162,7 +162,7 @@ class Image:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(1)
 
-            while default_timer() - start_time > timeout:
+            while default_timer() - start_time < timeout:
                 if s.connect_ex((self.ip, port)):
                     # Break out of the loop for this port,
                     # indicating success
