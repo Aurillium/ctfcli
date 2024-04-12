@@ -1008,6 +1008,8 @@ class ChallengeCommand:
             if (challenge_instance.image or challenge_instance.test_image) and skip_docker:
                 click.secho(f"Skipped {challenge_name}; used Docker", color="yellow")
                 continue
+
+            click.secho(f"Testing {challenge_name}...", fg="blue")
             # The docker wait <= 0 condition prevents error messages for low timeouts
             success, passes, fails = challenge_instance.test(timeout, docker_wait, docker_wait <= 0, docker_environment)
             if success:
