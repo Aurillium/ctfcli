@@ -253,7 +253,7 @@ class Challenge(dict):
 
         # Check if it's a path to dockerfile to be built
         if (self.challenge_directory / challenge_image / "Dockerfile").exists():
-            return Image(slugify(self["name"]), self.challenge_directory / self["image"])
+            return Image(slugify(self["name"]), self.challenge_directory / challenge_image)
 
         # Check if it's a local pre-built image
         if (
